@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Builds
+dist/
+build/
+.vite/
+
+# Environment and secrets
+.env
+.env.*
+backend/.env
+!backend/.env.example
+!.env.example
+
+# Local SQLite databases & exports
+backend/data/*
+!backend/data/.gitkeep
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
