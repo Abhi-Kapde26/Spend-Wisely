@@ -12,6 +12,8 @@ import exportRoutes from './export.js';
 import sheetsRoutes from './googleSheets.js';
 import recurringRoutes from './recurring.js';
 import importRoutes from './import.js';
+import repaymentRoutes from './repayments.js';
+import notesRoutes from './notes.js';
 
 const router = Router();
 
@@ -21,6 +23,8 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/borrow-lend', borrowLendRoutes);
+router.use('/repayments', repaymentRoutes);
+router.use('/notes', notesRoutes);
 router.use('/budgets', budgetRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/', historyRoutes);         // /history, /monthly, /monthly/:year/:month

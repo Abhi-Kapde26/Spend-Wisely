@@ -16,6 +16,7 @@ import TodayTransactionList from '../components/dashboard/TodayTransactionList.j
 import BorrowLendSummary from '../components/dashboard/BorrowLendSummary.jsx';
 import UpcomingDues from '../components/dashboard/UpcomingDues.jsx';
 import MonthProgressCard from '../components/dashboard/MonthProgressCard.jsx';
+import NotepadCard from '../components/dashboard/NotepadCard.jsx';
 
 import AddExpenseModal from '../components/modals/AddExpenseModal.jsx';
 import AddMoneyModal from '../components/modals/AddMoneyModal.jsx';
@@ -169,10 +170,18 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* 1. Balance + today's budget */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      {/* 1. Balance + today's budget + future expenses notepad */}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
         <BalanceCard data={data} currency={currency} />
         <DailyBudgetCard today={data && data.today} week={data && data.week} currency={currency} />
+        <div className="flex flex-col md:col-span-2 lg:col-span-1">
+          <NotepadCard
+            initialNote={data && data.note}
+            onNoteSaved={(updatedNote) => {
+              setData((prev) => (prev ? { ...prev, note: updatedNote } : prev));
+            }}
+          />
+        </div>
       </div>
 
       {/* 2. Quick actions */}

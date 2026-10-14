@@ -34,3 +34,6 @@ app.get('/health', (_req, res) => res.json({ ok: true, service: 'spend-wisely-ap
 
 app.use(notFound);
 app.use(errorHandler);
+
+// Serverless hosts (Vercel) wrap the exported Express app instead of listening.
+export default app;

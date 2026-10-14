@@ -227,11 +227,20 @@ async function main() {
   r = await api('GET', '/google-sheets/status', { token });
   check('status disconnected', r.json?.connected === false);
   r = await api('POST', '/google-sheets/connect', { token, body: { sheetUrl: 'https://docs.google.com/spreadsheets/d/1AbCDeFgHiJkLmNoPqRsTuVwXyZ/edit#gid=0' } });
-  check('connect valid URL → connected (demo mode)', r.json?.connected === true && r.json?.mode === 'demo', JSON.stringify(r.json));
+  check('connect valid URL → connected', r.json?.connected === true && ['demo', 'live'].includes(r.json?.mode), JSON.stringify(r.json));
+  // Whether sync can work depends on whether GOOGLE_* credentials are configured
+  // in the environment: demo mode refuses with guidance, live mode really calls
+  // Google (and surfaces its error for this deliberately fake sheet id).
+  const live = r.json?.mode === 'live';
   r = await api('POST', '/google-sheets/connect', { token, body: { sheetUrl: 'https://example.com/not-a-sheet' } });
   check('connect invalid URL → 400', r.res.status === 400, `status=${r.res.status}`);
+  await api('POST', '/google-sheets/connect', { token, body: { sheetUrl: 'https://docs.google.com/spreadsheets/d/1AbCDeFgHiJkLmNoPqRsTuVwXyZ/edit#gid=0' } });
   r = await api('POST', '/google-sheets/sync', { token });
-  check('sync without creds → 400 with guidance', r.res.status === 400 && /credentials/i.test(r.json?.error || ''), `status=${r.res.status} ${r.json?.error}`);
+  if (live) {
+    check('sync with creds → Google error surfaces (not 200)', r.res.status !== 200 && r.res.status >= 400, `status=${r.res.status} ${r.json?.error}`);
+  } else {
+    check('sync without creds → 400 with guidance', r.res.status === 400 && /credentials/i.test(r.json?.error || ''), `status=${r.res.status} ${r.json?.error}`);
+  }
   r = await api('DELETE', '/google-sheets/disconnect', { token });
   check('disconnect → success', r.json?.success === true);
 
@@ -290,6 +299,16 @@ async function main() {
   r = await api('POST', '/auth/login', { body: { email: USER.email, password: 'newpass1' } });
   check('login with new password → token', Boolean(r.json?.token));
   USER.password = 'newpass1';
+
+  console.log('\n=== 14b. NOTEPAD / NOTES ===');
+  r = await api('GET', '/notes', { token });
+  check('GET /notes → 200', r.res.status === 200 && typeof r.json?.note?.content === 'string');
+  r = await api('PUT', '/notes', { token, body: { content: '• Rent ₹12,000\n• Electricity ₹1,500' } });
+  check('PUT /notes → 200 with saved content', r.res.status === 200 && r.json?.note?.content.includes('Rent'));
+  r = await api('GET', '/dashboard', { token });
+  check('dashboard includes updated note', r.json?.note?.content.includes('Rent'));
+  r = await api('PUT', '/notes', { token, body: { content: '' } });
+  check('PUT /notes with empty content succeeds', r.res.status === 200 && r.json?.note?.content === '');
 
   console.log('\n=== 15. SECURITY — cross-user isolation ===');
   r = await api('POST', '/auth/register', { body: OTHER });

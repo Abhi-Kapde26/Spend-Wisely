@@ -4,13 +4,9 @@ import { validate, queryInt } from '../middleware/validate.js';
 import { auth } from '../middleware/auth.js';
 import { HttpError } from '../middleware/error.js';
 import {
-  listBorrowLend, findBorrowLend, createBorrowLend, updateBorrowLend, deleteBorrowLend, syncStatus,
+  listBorrowLend, findBorrowLend, createBorrowLend, updateBorrowLend, deleteBorrowLend,
 } from '../repositories/borrowLend.js';
-import {
-  listRepayments, findRepayment, createRepayment, deleteRepayment, paidSoFar,
-} from '../repositories/repayments.js';
-import { transaction } from '../db/index.js';
-import { round2 } from '../utils/shape.js';
+import { listRepayments } from '../repositories/repayments.js';
 
 const router = Router();
 router.use(auth);
@@ -23,13 +19,6 @@ const blSchema = z.object({
   amount: z.coerce.number().positive('Amount must be greater than 0').max(1_000_000_000),
   date: z.string().regex(dateRe, 'Date must be YYYY-MM-DD').optional(),
   dueDate: z.string().regex(dateRe, 'Due date must be YYYY-MM-DD').nullable().optional(),
-  comment: z.string().trim().max(300).nullable().optional(),
-});
-
-const repaymentSchema = z.object({
-  borrowLendId: z.coerce.number().int().positive(),
-  amount: z.coerce.number().positive('Amount must be greater than 0'),
-  date: z.string().regex(dateRe, 'Date must be YYYY-MM-DD').optional(),
   comment: z.string().trim().max(300).nullable().optional(),
 });
 
@@ -89,45 +78,8 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
-/** POST /api/repayments — partial or full repayment (SPEC §2.3) */
-router.post('/repayments', validate(repaymentSchema), (req, res) => {
-  const result = transaction(() => {
-    const { borrowLendId, amount, comment } = req.body;
-    const parent = findBorrowLend(req.user.id, borrowLendId);
-    if (!parent) throw new HttpError(404, 'Borrow/Lend record not found');
-    if (parent.status === 'completed') throw new HttpError(400, 'This record is already fully repaid');
+import repaymentsRouter from './repayments.js';
 
-    const paid = paidSoFar(parent.id);
-    const remaining = round2(parent.amount - paid);
-    const value = round2(amount);
-    if (value > remaining + 0.009) {
-      throw new HttpError(400, `Repayment exceeds remaining amount (₹${remaining})`);
-    }
-
-    const repayment = createRepayment(req.user.id, {
-      borrowLendId: parent.id,
-      amount: value,
-      date: req.body.date || today(),
-      comment: comment || null,
-    });
-    const item = syncStatus(req.user.id, parent.id);
-    return { repayment, item };
-  });
-
-  res.status(201).json(result);
-});
-
-/** DELETE /api/repayments/:id — undo a repayment, parent status recalculates */
-router.delete('/repayments/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const rep = findRepayment(req.user.id, id);
-  if (!rep) throw new HttpError(404, 'Repayment not found');
-
-  transaction(() => {
-    deleteRepayment(req.user.id, id);
-    syncStatus(req.user.id, rep.borrowLendId);
-  });
-  res.json({ success: true });
-});
+router.use('/repayments', repaymentsRouter);
 
 export default router;

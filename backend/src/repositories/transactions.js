@@ -41,7 +41,8 @@ export function listTransactions(userId, f = {}) {
     params,
   ).n);
 
-  const limit = Math.min(Math.max(Number(f.limit) || 20, 1), 200);
+  const maxLimit = f.limit && Number(f.limit) > 200 ? 10000 : 200;
+  const limit = Math.min(Math.max(Number(f.limit) || 20, 1), maxLimit);
   const page = Math.max(Number(f.page) || 1, 1);
   const sortDir = String(f.sort).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 

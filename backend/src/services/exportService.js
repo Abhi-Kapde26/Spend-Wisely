@@ -4,12 +4,20 @@ import PDFDocument from 'pdfkit';
 import { listTransactions } from '../repositories/transactions.js';
 import { listBorrowLend } from '../repositories/borrowLend.js';
 import { statement } from './historyService.js';
+import { balanceAsOf } from './balanceService.js';
+import { getSettings } from '../repositories/settings.js';
 import { findUserById } from '../repositories/users.js';
 import { pad2, daysInMonth, round2 } from '../utils/shape.js';
 
 /* ------------------------------------------------------------------ */
 /* Shared row builder                                                  */
 /* ------------------------------------------------------------------ */
+
+function getDayBefore(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d - 1);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+}
 
 function buildRows(userId, { from, to, type = null }) {
   const { items } = listTransactions(userId, { from, to, type, limit: 5000, sort: 'desc' });
@@ -22,6 +30,8 @@ function buildRows(userId, { from, to, type = null }) {
     amount: Math.abs(t.amount),
     direction: t.type === 'income' ? 'IN' : 'OUT',
     comment: t.comment || '',
+    createdAt: t.createdAt || t.created_at,
+    id: t.id,
   }));
 
   for (const b of bl) {
@@ -32,14 +42,36 @@ function buildRows(userId, { from, to, type = null }) {
       amount: b.amount,
       direction: b.type === 'borrow' ? 'IN' : 'OUT',
       comment: b.comment || '',
+      createdAt: b.createdAt || b.created_at,
+      id: b.id,
     });
+  }
+
+  // Chronological sort to calculate running total balance
+  rows.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.createdAt && b.createdAt && a.createdAt !== b.createdAt) {
+      return a.createdAt < b.createdAt ? -1 : 1;
+    }
+    return (a.id ?? 0) - (b.id ?? 0);
+  });
+
+  const startBal = from
+    ? balanceAsOf(userId, getDayBefore(from)).closingBalance
+    : round2(getSettings(userId)?.openingBalance || 0);
+
+  let running = startBal;
+  for (const r of rows) {
+    const delta = r.direction === 'IN' ? r.amount : -r.amount;
+    running = round2(running + delta);
+    r.totalBalance = running;
   }
 
   rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   return rows;
 }
 
-const HEADERS = ['Date', 'Type', 'Category/Person', 'Amount', 'Direction', 'Comment'];
+const HEADERS = ['Date', 'Type', 'Category/Person', 'Amount', 'Direction', 'Total Balance', 'Comment'];
 
 /* ------------------------------------------------------------------ */
 /* CSV (UTF-8 BOM + CRLF so Excel opens ₹ correctly)                  */
@@ -53,7 +85,7 @@ function csvEscape(value) {
 export function buildCsv(rows) {
   const lines = [HEADERS.map(csvEscape).join(',')];
   for (const r of rows) {
-    lines.push([r.date, r.type, r.category, r.amount, r.direction, r.comment].map(csvEscape).join(','));
+    lines.push([r.date, r.type, r.category, r.amount, r.direction, r.totalBalance !== undefined ? r.totalBalance : '', r.comment].map(csvEscape).join(','));
   }
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
@@ -76,6 +108,7 @@ export async function buildExcel(userId, rows, { from, to }) {
     { header: 'Category/Person', key: 'category', width: 22 },
     { header: 'Amount', key: 'amount', width: 16, style: { numFmt: '₹#,##0.00' } },
     { header: 'Direction', key: 'direction', width: 11 },
+    { header: 'Total Balance', key: 'totalBalance', width: 16, style: { numFmt: '₹#,##0.00' } },
     { header: 'Comment', key: 'comment', width: 34 },
   ];
 
@@ -85,10 +118,17 @@ export async function buildExcel(userId, rows, { from, to }) {
   headerRow.alignment = { vertical: 'middle' };
 
   for (const r of rows) {
-    ws.addRow({ ...r, amount: Number(r.amount) });
+    ws.addRow({
+      ...r,
+      amount: Number(r.amount),
+      totalBalance: r.totalBalance != null ? Number(r.totalBalance) : null,
+    });
   }
   ws.eachRow((row, n) => {
-    if (n > 1) row.getCell(4).alignment = { horizontal: 'right' };
+    if (n > 1) {
+      row.getCell(4).alignment = { horizontal: 'right' };
+      row.getCell(6).alignment = { horizontal: 'right' };
+    }
   });
 
   // Summary sheet

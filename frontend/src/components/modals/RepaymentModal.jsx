@@ -83,7 +83,7 @@ export default function RepaymentModal({ open, onClose, onSaved, item }) {
         if (cancelled) return;
         const normalized = normalizeItem(res.item);
         setDetail(normalized);
-        setRepayments((res.repayments || []).slice().reverse());
+        setRepayments(res.repayments || []);
         setAmount(normalized.remaining > 0 ? String(normalized.remaining) : '');
       })
       .catch((err) => {

@@ -2,6 +2,7 @@ import { listTransactions, sumTransactions, dailyExpenseTotals } from '../reposi
 import { listBorrowLend, monthlySums } from '../repositories/borrowLend.js';
 import { monthlyRows as repaymentRows } from '../repositories/repayments.js';
 import { balanceAsOf } from './balanceService.js';
+import { getSettings } from '../repositories/settings.js';
 import { daysInMonth, round2, pad2 } from '../utils/shape.js';
 
 const MONTH_NAMES = [
@@ -9,11 +10,17 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+function getDayBefore(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d - 1);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+}
+
 /** One row per money movement across all sources — powers History + statements. */
-function unifiedRows(userId, { from, to }) {
+function unifiedRows(userId, { from, to, openingBalance } = {}) {
   const rows = [];
 
-  const txs = listTransactions(userId, { from, to, limit: 200, sort: 'desc' }).items;
+  const txs = listTransactions(userId, { from, to, limit: 1000, sort: 'desc' }).items;
   for (const t of txs) {
     rows.push({
       id: `tx-${t.id}`,
@@ -29,11 +36,11 @@ function unifiedRows(userId, { from, to }) {
       category: t.category || null,
       person: null,
       status: null,
-      createdAt: t.createdAt,
+      createdAt: t.createdAt || t.created_at,
     });
   }
 
-  const bl = listBorrowLend(userId).items.filter((i) => i.date >= from && i.date <= to);
+  const bl = listBorrowLend(userId).items.filter((i) => (!from || i.date >= from) && (!to || i.date <= to));
   for (const b of bl) {
     rows.push({
       id: `bl-${b.id}`,
@@ -50,11 +57,11 @@ function unifiedRows(userId, { from, to }) {
       person: b.person,
       status: b.status,
       dueDate: b.dueDate,
-      createdAt: b.createdAt,
+      createdAt: b.createdAt || b.created_at,
     });
   }
 
-  const reps = repaymentRows(userId, from, to);
+  const reps = repaymentRows(userId, from || '2000-01-01', to || '2999-12-31');
   for (const r of reps) {
     const isOnLend = r.bl_type === 'lend'; // receiving back / getting paid
     rows.push({
@@ -71,11 +78,40 @@ function unifiedRows(userId, { from, to }) {
       category: null,
       person: r.person,
       status: null,
-      createdAt: r.createdAt,
+      createdAt: r.created_at || r.createdAt,
     });
   }
 
-  rows.sort((a, b) => (a.date === b.date ? (b.numericId ?? 0) - (a.numericId ?? 0) : a.date < b.date ? 1 : -1));
+  const startBal = openingBalance !== undefined
+    ? round2(openingBalance)
+    : (from ? balanceAsOf(userId, getDayBefore(from)).closingBalance : round2(getSettings(userId)?.openingBalance || 0));
+
+  // Sort ascending chronologically to calculate running total balance
+  rows.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.createdAt && b.createdAt && a.createdAt !== b.createdAt) {
+      return a.createdAt < b.createdAt ? -1 : 1;
+    }
+    return (a.numericId ?? 0) - (b.numericId ?? 0);
+  });
+
+  let running = startBal;
+  for (const r of rows) {
+    const delta = r.direction === 'in' ? r.amount : -r.amount;
+    running = round2(running + delta);
+    r.balance = running;
+    r.totalBalance = running;
+  }
+
+  // Sort descending (newest first) for history/statement presentation
+  rows.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    if (a.createdAt && b.createdAt && a.createdAt !== b.createdAt) {
+      return a.createdAt < b.createdAt ? 1 : -1;
+    }
+    return (b.numericId ?? 0) - (a.numericId ?? 0);
+  });
+
   return rows;
 }
 
@@ -148,7 +184,8 @@ export function history(userId, opts = {}) {
   const from = `${y}-${pad2(m)}-01`;
   const to = `${y}-${pad2(m)}-${pad2(dim)}`;
 
-  const all = unifiedRows(userId, { from, to });
+  const summary = statement(userId, y, m);
+  const all = unifiedRows(userId, { from, to, openingBalance: summary.openingBalance });
   const filtered = filterUnified(all, opts);
 
   const page = Math.max(1, Number(opts.page) || 1);
@@ -162,7 +199,7 @@ export function history(userId, opts = {}) {
     limit,
     year: y,
     month: m,
-    summary: statement(userId, y, m),
+    summary,
   };
 }
 
@@ -200,7 +237,11 @@ export function archive(userId) {
 export function fullStatement(userId, year, month) {
   const st = statement(userId, year, month);
   const dim = daysInMonth(year, month);
-  const rows = unifiedRows(userId, { from: st.from, to: `${year}-${pad2(month)}-${pad2(dim)}` });
+  const rows = unifiedRows(userId, {
+    from: st.from,
+    to: `${year}-${pad2(month)}-${pad2(dim)}`,
+    openingBalance: st.openingBalance,
+  });
   return { ...st, items: rows, transactionCount: rows.length };
 }
 

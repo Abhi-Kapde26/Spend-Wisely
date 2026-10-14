@@ -18,6 +18,9 @@ backend/.env
 backend/data/*
 !backend/data/.gitkeep
 
+# Vercel
+.vercel/
+
 # Logs and OS files
 *.log
 .DS_Store

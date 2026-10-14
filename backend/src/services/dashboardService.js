@@ -4,6 +4,7 @@ import { listTransactions, shapeTransaction } from '../repositories/transactions
 import { upcomingDues, outstanding } from '../repositories/borrowLend.js';
 import { dueRecurring } from '../repositories/recurring.js';
 import { getSettings } from '../repositories/settings.js';
+import { getNote } from '../repositories/notes.js';
 import { today as todayStr, round2, isoDate } from '../utils/shape.js';
 
 /** GET /dashboard — one round-trip payload for the whole dashboard page (SPEC §3.3). */
@@ -41,5 +42,6 @@ export function buildDashboard(userId) {
     recentTransactions: recentRows.items,
     upcomingDues: dues,
     hasRecurringDue: dueRecurring(userId, date).length > 0,
+    note: getNote(userId),
   };
 }

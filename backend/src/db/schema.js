@@ -137,6 +137,12 @@ CREATE TABLE IF NOT EXISTS import_history (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS notes (
+  user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  content    TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_tx_user_date    ON transactions(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_tx_user_type    ON transactions(user_id, type);
 CREATE INDEX IF NOT EXISTS idx_bl_user_status  ON borrow_lend(user_id, status);
