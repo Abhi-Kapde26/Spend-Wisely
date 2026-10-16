@@ -6,7 +6,7 @@
  */
 import { clearToken, getToken } from './auth.js';
 
-const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;git add frontend/src/lib/api.js
+const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
 function buildUrl(path, params) {
   const url = new URL(BASE + path, window.location.origin);
